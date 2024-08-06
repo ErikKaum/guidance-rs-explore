@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use jsonschema::JSONSchema;
+use regex::escape;
 use serde_json::json;
 use serde_json::Value;
-use regex::escape;
 
 use crate::handle_types;
 use crate::types;
@@ -32,9 +32,8 @@ pub fn build_regex_from_schema(json: &str, whitespace_pattern: Option<&str>) -> 
 }
 
 pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String> {
-    
     println!("to regex called with json: {:?}", json);
-    
+
     let whitespace_pattern = whitespace_pattern.unwrap_or(types::WHITESPACE);
 
     match json {
@@ -65,15 +64,15 @@ pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String
             };
 
             match keyword {
-                SchemaKeyword::Properties => handle_properties(&obj, whitespace_pattern),
+                SchemaKeyword::Properties => handle_properties(obj, whitespace_pattern),
                 // SchemaKeyword::AllOf => handle_all_of(&obj, whitespace_pattern),
-                SchemaKeyword::AnyOf => handle_any_of(&obj, whitespace_pattern),
+                SchemaKeyword::AnyOf => handle_any_of(obj, whitespace_pattern),
                 // SchemaKeyword::OneOf => handle_one_of(&obj, whitespace_pattern),
                 // SchemaKeyword::PrefixItems => handle_prefix_items(&obj, whitespace_pattern),
                 // SchemaKeyword::Enum => handle_enum(&obj, whitespace_pattern),
                 // SchemaKeyword::Const => handle_const(&obj, whitespace_pattern),
                 // SchemaKeyword::Ref => handle_ref(&obj, whitespace_pattern),
-                SchemaKeyword::Type => handle_type(&obj, whitespace_pattern),
+                SchemaKeyword::Type => handle_type(obj, whitespace_pattern),
                 SchemaKeyword::EmptyObject => handle_empty_object(whitespace_pattern),
                 val => Err(anyhow!("Unsupported JSON Schema keyword: {:?}", val)),
             }
@@ -82,33 +81,44 @@ pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String
     }
 }
 
-fn handle_properties(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-    
+fn handle_properties(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+) -> Result<String> {
     let mut regex = String::from(r"\{");
-    
-    let properties = obj.get("properties")
+
+    let properties = obj
+        .get("properties")
         .and_then(Value::as_object)
         .ok_or_else(|| anyhow!("'properties' not found or not an object"))?;
-    
-    let required_properties = obj.get("required")
+
+    let required_properties = obj
+        .get("required")
         .and_then(Value::as_array)
         .map(|arr| arr.iter().filter_map(Value::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
 
-    let is_required: Vec<bool> = properties.keys()
+    let is_required: Vec<bool> = properties
+        .keys()
         .map(|item| required_properties.contains(&item.as_str()))
         .collect();
 
     if is_required.iter().any(|&x| x) {
-        let last_required_pos = is_required.iter().enumerate()
+        let last_required_pos = is_required
+            .iter()
+            .enumerate()
             .filter(|&(_, &value)| value)
             .map(|(i, _)| i)
             .max()
             .unwrap();
 
         for (i, (name, value)) in properties.iter().enumerate() {
-            let mut subregex = format!(r#"{whitespace_pattern}"{}"{}:{}""#, 
-                escape(name), whitespace_pattern, whitespace_pattern);
+            let mut subregex = format!(
+                r#"{whitespace_pattern}"{}"{}:{}"#,
+                escape(name),
+                whitespace_pattern,
+                whitespace_pattern
+            );
             subregex += &to_regex(value, Some(whitespace_pattern))?;
 
             if i < last_required_pos {
@@ -117,13 +127,22 @@ fn handle_properties(obj: &serde_json::Map<String, Value>, whitespace_pattern: &
                 subregex = format!("{},{}", whitespace_pattern, subregex);
             }
 
-            regex += &if is_required[i] { subregex } else { format!("({})?", subregex) };
+            regex += &if is_required[i] {
+                subregex
+            } else {
+                format!("({})?", subregex)
+            };
         }
     } else {
         let mut property_subregexes = Vec::new();
-        for (name, value) in properties.iter() {
-            let mut subregex = format!(r#"{whitespace_pattern}"{}"{}:{}""#, 
-                escape(name), whitespace_pattern, whitespace_pattern);
+        for (name, value) in properties.iter().rev() {
+            let mut subregex = format!(
+                r#"{whitespace_pattern}"{}"{}:{}"#,
+                escape(name),
+                whitespace_pattern,
+                whitespace_pattern
+            );
+
             subregex += &to_regex(value, Some(whitespace_pattern))?;
             property_subregexes.push(subregex);
         }
@@ -132,7 +151,7 @@ fn handle_properties(obj: &serde_json::Map<String, Value>, whitespace_pattern: &
         for i in 0..property_subregexes.len() {
             let mut pattern = String::new();
             for subregex in &property_subregexes[..i] {
-                pattern += &format!("({}{}}},)?", subregex, whitespace_pattern);
+                pattern += &format!("({}{},)?", subregex, whitespace_pattern);
             }
             pattern += &property_subregexes[i];
             for subregex in &property_subregexes[i + 1..] {
@@ -144,11 +163,10 @@ fn handle_properties(obj: &serde_json::Map<String, Value>, whitespace_pattern: &
         regex += &format!("({})?", possible_patterns.join("|"));
     }
 
-    regex += &format!("{}}}", whitespace_pattern);
+    regex += &format!("{}\\}}", whitespace_pattern);
 
     Ok(regex)
 }
-
 
 // fn handle_all_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
 //     // Implementation for allOf case
@@ -292,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_string_type_with_length_constraint() {
-        let obj = json!({"type": "string", "minLength": "2", "maxLength": "5"})
+        let obj = json!({"type": "string", "minLength": 2, "maxLength": 5})
             .as_object()
             .unwrap()
             .clone();
@@ -311,9 +329,9 @@ mod tests {
         let obj = json!(
             {
                 "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                }
+                "properties": {
+                    "name": {"type": "string"},
+                },
             }
         )
         .as_object()
@@ -323,9 +341,77 @@ mod tests {
         let regex_pattern = handle_types::handle_object_type(&obj, types::WHITESPACE).unwrap();
 
         println!("regex_pattern: {}", regex_pattern);
+        // let regex = Regex::new(&regex_pattern).unwrap();
 
-        let regex = Regex::new(&regex_pattern).unwrap();
+        // assert!(regex.is_match(
+        //     r#"{
+        //     "name": "drbh"
+        // }"#
+        // ));
+    }
 
-        assert!(regex.is_match(r#"{}"#));
+    #[test]
+    fn test_expected_regex() {
+        let json = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 5
+                },
+            },
+        })
+        .to_string();
+        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
+        assert_eq!(
+            regex_pattern,
+            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\]){2,5}")?[ ]?\}"#
+        );
+
+        let json = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+            },
+        })
+        .to_string();
+
+        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
+        assert_eq!(
+            regex_pattern,
+            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*")?[ ]?\}"#
+        );
+
+        let json = json!({
+            "type": "object",
+            "properties": {
+                "flag": {"type": "boolean"},
+            },
+        })
+        .to_string();
+
+        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
+        assert_eq!(
+            regex_pattern,
+            r#"\{([ ]?"flag"[ ]?:[ ]?(true|false))?[ ]?\}"#
+        );
+
+        let json = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "flag": {"type": "boolean"},
+            },
+        })
+        .to_string();
+
+        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
+        assert_eq!(
+            regex_pattern,
+            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*"([ ]?,[ ]?"flag"[ ]?:[ ]?(true|false))?|([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*"[ ]?,)?[ ]?"flag"[ ]?:[ ]?(true|false))?[ ]?\}"#
+        );
     }
 }

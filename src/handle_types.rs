@@ -17,22 +17,30 @@ pub fn handle_null_type() -> Result<String> {
 
 pub fn handle_string_type(obj: &serde_json::Map<String, Value>) -> Result<String> {
     if obj.contains_key("maxLength") || obj.contains_key("minLength") {
-        let max_items = obj
-            .get("maxLength")
-            .and_then(Value::as_u64)
-            .unwrap_or(u64::MAX);
-        let min_items = obj.get("minLength").and_then(Value::as_u64).unwrap_or(0);
+        let max_items = obj.get("maxLength");
+        let min_items = obj.get("minLength");
 
-        if max_items < min_items {
-            return Err(anyhow::anyhow!(
-                "maxLength must be greater than or equal to minLength"
-            ));
+        match (min_items, max_items) {
+            (Some(min), Some(max)) if min.as_f64() > max.as_f64() => {
+                return Err(anyhow::anyhow!(
+                    "maxLength must be greater than or equal to minLength"
+                ));
+            }
+            _ => {}
         }
+
+        let formatted_max = max_items
+            .and_then(Value::as_u64)
+            .map_or("".to_string(), |n| format!("{}", n));
+        let formatted_min = min_items
+            .and_then(Value::as_u64)
+            .map_or("".to_string(), |n| format!("{}", n));
+
         Ok(format!(
-            r#""{}{{{{{}:{}}}}}""#,
+            r#""{}{{{},{}}}""#,
             types::STRING_INNER,
-            min_items,
-            max_items
+            formatted_min,
+            formatted_max,
         ))
     } else if let Some(pattern) = obj.get("pattern").and_then(Value::as_str) {
         if pattern.starts_with('^') && pattern.ends_with('$') {

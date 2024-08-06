@@ -6,6 +6,7 @@ from referencing.jsonschema import DRAFT202012
 
 from outlines.fsm.json_schema import to_regex
 
+
 def setup_benchmark():
     schema = {
         "type": "integer",
@@ -23,6 +24,7 @@ def setup_benchmark():
 
     return resolver, content
 
+
 def run_to_regex():
     resolver, content = setup_benchmark()
     return to_regex(resolver, content)
@@ -39,13 +41,25 @@ def run_benchmark():
     print(f"Average time: {average_time * 1e6:.3f} microseconds")
     print(f"Average time: {average_time * 1e9:.3f} nanoseconds")
 
+
 def main():
     schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string"},
+            "name": {
+                "type": "string",
+                 "minLength": 2, "maxLength": 5
+            },
         },
     }
+
+    # schema = {
+    #     "type": "object",
+    #     "properties": {
+    #         "name": {"type": "string"},
+    #         "flag": {"type": "boolean"},
+    #     },
+    # }
 
     Validator.check_schema(schema)
 
@@ -61,6 +75,6 @@ def main():
     print(len(res))
     print(res)
 
+
 if __name__ == "__main__":
     main()
-
