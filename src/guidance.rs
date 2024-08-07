@@ -324,44 +324,33 @@ pub fn handle_empty_object(whitespace_pattern: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use crate::py_wrapper::python_build_regex_from_schema;
-    use regex::Regex;
-    use regex_syntax::{hir::{Hir, HirKind}, Parser};
+    use regex_syntax::Parser;
     use serde_json::json;
-
+    
     use super::*;
 
     fn compare_with_outlines(schema: &serde_json::Value) {
         let schema_str = schema.to_string();
         let rust_regex = build_regex_from_schema(&schema_str, None).unwrap();
         let outlines_regex = python_build_regex_from_schema(&schema_str).unwrap();
-        
+
         assert!(
-            compare_regex_expressions(&rust_regex, &outlines_regex),
+            compare_regexes(&rust_regex, &outlines_regex),
             "Rust and Python outputs are not equivalent for schema: {}\nRust:    {}\nPython:  {}",
             schema_str, rust_regex, outlines_regex
         );
     }
 
-    fn compare_regex_expressions(rust_regex: &str, python_regex: &str) -> bool {
-        // Parse both regexes
-        let rust_hir = Parser::new().parse(rust_regex);
-        let python_hir = Parser::new().parse(python_regex);
+    fn compare_regexes(a: &str, b: &str) -> bool {
+        let parse_result_a = Parser::new().parse(a);
+        let parse_result_b = Parser::new().parse(b);
     
-        // If parsing fails for either regex, they're not equivalent
-        if rust_hir.is_err() || python_hir.is_err() {
-            return false;
+        match (parse_result_a, parse_result_b) {
+            (Ok(hir_a), Ok(hir_b)) => hir_a == hir_b,
+            _ => false,
         }
-    
-        let rust_hir = rust_hir.unwrap();
-        let python_hir = python_hir.unwrap();
-        
-        if rust_hir != python_hir {
-            return false;
-        }
-    
-        true
     }
-
+    
     #[test]
     fn test_handle_object_type() {
         let schema = json!({
