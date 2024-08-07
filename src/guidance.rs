@@ -26,14 +26,10 @@ pub fn build_regex_from_schema(json: &str, whitespace_pattern: Option<&str>) -> 
     let _compiled_schema = JSONSchema::compile(&json_value)
         .map_err(|e| anyhow!("Failed to compile JSON schema: {}", e))?;
 
-    let regex = to_regex(&json_value, whitespace_pattern);
-
-    Ok(regex.unwrap())
+    to_regex(&json_value, whitespace_pattern)
 }
 
 pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String> {
-    println!("to regex called with json: {:?}", json);
-
     let whitespace_pattern = whitespace_pattern.unwrap_or(types::WHITESPACE);
 
     match json {
@@ -60,18 +56,18 @@ pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String
                         None
                     }
                 })
-                .ok_or_else(|| anyhow!("Unsupported JSON Schema structure"))?
+                .ok_or_else(|| anyhow!("Unsupported JSON Schema structure {} \nMake sure it is valid to the JSON Schema specification and check if it's supported by Outlines.\nIf it should be supported, please open an issue.", json))?
             };
 
             match keyword {
                 SchemaKeyword::Properties => handle_properties(obj, whitespace_pattern),
-                // SchemaKeyword::AllOf => handle_all_of(&obj, whitespace_pattern),
+                SchemaKeyword::AllOf => handle_all_of(obj, whitespace_pattern),
                 SchemaKeyword::AnyOf => handle_any_of(obj, whitespace_pattern),
-                // SchemaKeyword::OneOf => handle_one_of(&obj, whitespace_pattern),
-                // SchemaKeyword::PrefixItems => handle_prefix_items(&obj, whitespace_pattern),
-                // SchemaKeyword::Enum => handle_enum(&obj, whitespace_pattern),
-                // SchemaKeyword::Const => handle_const(&obj, whitespace_pattern),
-                // SchemaKeyword::Ref => handle_ref(&obj, whitespace_pattern),
+                SchemaKeyword::OneOf => handle_one_of(obj, whitespace_pattern),
+                SchemaKeyword::PrefixItems => handle_prefix_items(obj, whitespace_pattern),
+                SchemaKeyword::Enum => handle_enum(obj, whitespace_pattern),
+                SchemaKeyword::Const => handle_const(obj, whitespace_pattern),
+                // SchemaKeyword::Ref => handle_ref(obj, whitespace_pattern),
                 SchemaKeyword::Type => handle_type(obj, whitespace_pattern),
                 SchemaKeyword::EmptyObject => handle_empty_object(whitespace_pattern),
                 val => Err(anyhow!("Unsupported JSON Schema keyword: {:?}", val)),
@@ -168,10 +164,22 @@ fn handle_properties(
     Ok(regex)
 }
 
-// fn handle_all_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for allOf case
-//     todo!()
-// }
+fn handle_all_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+    match obj.get("allOf") {
+        Some(Value::Array(all_of)) => {
+            let subregexes: Result<Vec<String>> = all_of
+                .iter()
+                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .collect();
+
+            let subregexes = subregexes?;
+            let combined_regex = subregexes.join("");
+
+            Ok(format!(r"({})", combined_regex))
+        }
+        _ => Err(anyhow!("'allOf' must be an array")),
+    }
+}
 
 fn handle_any_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
     match obj.get("anyOf") {
@@ -189,22 +197,85 @@ fn handle_any_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str)
     }
 }
 
-// fn handle_one_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for oneOf case
-//     todo!()
-// }
-// fn handle_prefix_items(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for prefixItems case
-//     todo!()
-// }
-// fn handle_enum(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for enum case
-//     todo!()
-// }
-// fn handle_const(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for const case
-//     todo!()
-// }
+fn handle_one_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+    match obj.get("oneOf") {
+        Some(Value::Array(one_of)) => {
+            let subregexes: Result<Vec<String>> = one_of
+                .iter()
+                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .collect();
+
+            let subregexes = subregexes?;
+
+            let xor_patterns: Vec<String> = subregexes
+                .into_iter()
+                .map(|subregex| format!(r"(?:{})", subregex))
+                .collect();
+
+            Ok(format!(r"({})", xor_patterns.join("|")))
+        }
+        _ => Err(anyhow!("'oneOf' must be an array")),
+    }
+}
+
+fn handle_prefix_items(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+) -> Result<String> {
+    match obj.get("prefixItems") {
+        Some(Value::Array(prefix_items)) => {
+            let element_patterns: Result<Vec<String>> = prefix_items
+                .iter()
+                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .collect();
+
+            let element_patterns = element_patterns?;
+
+            let comma_split_pattern = format!("{},{}", whitespace_pattern, whitespace_pattern);
+            let tuple_inner = element_patterns.join(&comma_split_pattern);
+
+            Ok(format!(
+                r"\[{whitespace_pattern}{tuple_inner}{whitespace_pattern}\]"
+            ))
+        }
+        _ => Err(anyhow!("'prefixItems' must be an array")),
+    }
+}
+
+fn handle_enum(obj: &serde_json::Map<String, Value>, _whitespace_pattern: &str) -> Result<String> {
+    match obj.get("enum") {
+        Some(Value::Array(enum_values)) => {
+            let choices: Result<Vec<String>> = enum_values
+                .iter()
+                .map(|choice| match choice {
+                    Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+                        let json_string = serde_json::to_string(choice)?;
+                        Ok(regex::escape(&json_string))
+                    }
+                    _ => Err(anyhow!("Unsupported data type in enum: {:?}", choice)),
+                })
+                .collect();
+
+            let choices = choices?;
+            Ok(format!(r"({})", choices.join("|")))
+        }
+        _ => Err(anyhow!("'enum' must be an array")),
+    }
+}
+
+fn handle_const(obj: &serde_json::Map<String, Value>, _whitespace_pattern: &str) -> Result<String> {
+    match obj.get("const") {
+        Some(const_value) => match const_value {
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+                let json_string = serde_json::to_string(const_value)?;
+                Ok(regex::escape(&json_string))
+            }
+            _ => Err(anyhow!("Unsupported data type in const: {:?}", const_value)),
+        },
+        None => Err(anyhow!("'const' key not found in object")),
+    }
+}
+
 // fn handle_ref(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
 //     // Implementation for $ref case
 //     todo!()
@@ -252,107 +323,45 @@ pub fn handle_empty_object(whitespace_pattern: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::py_wrapper::python_build_regex_from_schema;
     use regex::Regex;
+    use serde_json::json;
 
     use super::*;
 
-    #[test]
-    fn test_boolean_type() {
-        let json = r#"{"type": "boolean"}"#;
-        let regex_pattern = build_regex_from_schema(json, None).unwrap();
-
-        let regex = Regex::new(&regex_pattern).unwrap();
-
-        assert!(regex.is_match("true"));
-        assert!(regex.is_match("false"));
-
-        assert!(!regex.is_match("null"));
-        assert!(!regex.is_match("42"));
-        assert!(!regex.is_match("3.14"));
-        assert!(!regex.is_match("\"hello\""));
+    fn compare_with_outlines(schema: &serde_json::Value) {
+        let schema_str = schema.to_string();
+        let rust_regex = build_regex_from_schema(&schema_str, None).unwrap();
+        let outlines_regex = python_build_regex_from_schema(&schema_str).unwrap();
+        
+        assert!(
+            regex_equivalent(&rust_regex, &outlines_regex),
+            "Rust and Python outputs are not equivalent for schema: {}\nRust:    {}\nPython:  {}",
+            schema_str, rust_regex, outlines_regex
+        );
     }
 
-    #[test]
-    fn test_string_type() {
-        let json = r#"{"type": "string"}"#;
-        let regex_pattern = build_regex_from_schema(json, None).unwrap();
-
-        let regex = Regex::new(&regex_pattern).unwrap();
-
-        // Valid strings
-        assert!(regex.is_match(r#""hello""#));
-        assert!(regex.is_match(r#""""#)); // Empty string
-        assert!(regex.is_match(r#""Hello, World!""#));
-        assert!(regex.is_match(r#""1234""#));
-        assert!(regex.is_match(r#""Special chars: !@#$%^&*()""#));
-        assert!(regex.is_match(r#""Escaped \"quotes\"""#));
-        assert!(regex.is_match(r#""Escaped backslash: \\""#));
-
-        // Invalid strings
-        assert!(!regex.is_match(r#"hello"#)); // Unquoted
-        assert!(!regex.is_match(r#""Unclosed quote"#));
-        assert!(!regex.is_match(r#"'Single quotes'"#));
-        assert!(!regex.is_match(
-            r#""Contains
-        newline""#
-        ));
-
-        // TODO, return to why this is failing
-        // assert!(!regex.is_match(r#""Contains "unescaped" quotes""#));
-
-        // Non-string types
-        assert!(!regex.is_match("true"));
-        assert!(!regex.is_match("false"));
-        assert!(!regex.is_match("null"));
-        assert!(!regex.is_match("42"));
-        assert!(!regex.is_match("3.14"));
+    fn regex_equivalent(a: &str, b: &str) -> bool {
+        if a == b {
+            return true;
+        }
+    
+        // If direct comparison fails, compile and compare as regexes
+        let re_a = Regex::new(a).unwrap();
+        let re_b = Regex::new(b).unwrap();
+        
+        if re_a.to_string() == re_b.to_string() {            
+            return true;
+        } else {
+            return false;
+        }
     }
+    
+
 
     #[test]
-    fn test_string_type_with_length_constraint() {
-        let obj = json!({"type": "string", "minLength": 2, "maxLength": 5})
-            .as_object()
-            .unwrap()
-            .clone();
-        let regex_pattern = handle_types::handle_string_type(&obj).unwrap();
-
-        let regex = Regex::new(&regex_pattern).unwrap();
-
-        assert!(regex.is_match(r#""ab""#));
-        assert!(regex.is_match(r#""abcde""#));
-        assert!(!regex.is_match(r#""a""#)); // Too short
-        assert!(!regex.is_match(r#""abcdef""#)); // Too long
-    }
-
-    #[test]
-    fn test_object_type() {
-        let obj = json!(
-            {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                },
-            }
-        )
-        .as_object()
-        .unwrap()
-        .clone();
-
-        let regex_pattern = handle_types::handle_object_type(&obj, types::WHITESPACE).unwrap();
-
-        println!("regex_pattern: {}", regex_pattern);
-        // let regex = Regex::new(&regex_pattern).unwrap();
-
-        // assert!(regex.is_match(
-        //     r#"{
-        //     "name": "drbh"
-        // }"#
-        // ));
-    }
-
-    #[test]
-    fn test_expected_regex() {
-        let json = json!({
+    fn test_handle_object_type() {
+        let schema = json!({
             "type": "object",
             "properties": {
                 "name": {
@@ -361,57 +370,119 @@ mod tests {
                     "maxLength": 5
                 },
             },
-        })
-        .to_string();
-        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
-        assert_eq!(
-            regex_pattern,
-            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\]){2,5}")?[ ]?\}"#
-        );
+        });
+        compare_with_outlines(&schema);
+    }
 
-        let json = json!({
+    #[test]
+    fn test_string_type() {
+        let schema = json!({"type": "string", "minLength": 2, "maxLength": 5});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_number_type() {
+        let schema = json!({"type": "number", "minimum": 0, "maximum": 100});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_integer_type() {
+        let schema = json!({"type": "integer", "minimum": 1, "maximum": 10});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_array_type() {
+        let schema = json!({"type": "array", "items": {"type": "string"}});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_object_type() {
+        let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_boolean_type() {
+        let schema = json!({"type": "boolean"});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_null_type() {
+        let schema = json!({"type": "null"});
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_prefix_items() {
+        let schema = json!({
+            "prefixItems": [
+                { "type": "integer" },
+                { "type": "string" },
+                { "type": "boolean" }
+            ]
+        });
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_enum() {
+        let schema = json!({
+            "enum": ["red", "green", "blue", 42, true, null]
+        });
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_const() {
+        let schema = json!({
+            "const": "hello world"
+        });
+        compare_with_outlines(&schema);
+    }
+
+    #[test]
+    fn test_expected_regex() {
+        let schema1 = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 5
+                },
+            },
+        });
+        compare_with_outlines(&schema1);
+
+        let schema2 = json!({
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string"
                 },
             },
-        })
-        .to_string();
+        });
+        compare_with_outlines(&schema2);
 
-        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
-        assert_eq!(
-            regex_pattern,
-            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*")?[ ]?\}"#
-        );
-
-        let json = json!({
+        let schema3 = json!({
             "type": "object",
             "properties": {
                 "flag": {"type": "boolean"},
             },
-        })
-        .to_string();
+        });
+        compare_with_outlines(&schema3);
 
-        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
-        assert_eq!(
-            regex_pattern,
-            r#"\{([ ]?"flag"[ ]?:[ ]?(true|false))?[ ]?\}"#
-        );
-
-        let json = json!({
+        let schema4 = json!({
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
                 "flag": {"type": "boolean"},
             },
-        })
-        .to_string();
-
-        let regex_pattern = build_regex_from_schema(&json, None).unwrap();
-        assert_eq!(
-            regex_pattern,
-            r#"\{([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*"([ ]?,[ ]?"flag"[ ]?:[ ]?(true|false))?|([ ]?"name"[ ]?:[ ]?"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*"[ ]?,)?[ ]?"flag"[ ]?:[ ]?(true|false))?[ ]?\}"#
-        );
+        });
+        compare_with_outlines(&schema4);
     }
 }

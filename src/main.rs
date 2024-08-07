@@ -3,9 +3,9 @@ use serde_json::json;
 use std::env;
 
 mod guidance;
-mod types;
-
 mod handle_types;
+mod py_wrapper;
+mod types;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
