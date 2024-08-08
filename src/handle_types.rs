@@ -46,9 +46,9 @@ pub fn handle_string_type(obj: &serde_json::Map<String, Value>) -> Result<String
         ))
     } else if let Some(pattern) = obj.get("pattern").and_then(Value::as_str) {
         if pattern.starts_with('^') && pattern.ends_with('$') {
-            Ok(format!(r#""({})""#, &pattern[1..pattern.len() - 1]))
+            Ok(format!(r#"("{}")"#, &pattern[1..pattern.len() - 1]))
         } else {
-            Ok(format!(r#""({})""#, pattern))
+            Ok(format!(r#"("{}")"#, pattern))
         }
     } else if let Some(format) = obj.get("format").and_then(Value::as_str) {
         match types::FormatType::from_str(format) {
