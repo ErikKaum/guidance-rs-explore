@@ -359,10 +359,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_object_type() {
-        let schemas = vec![
-            json!({
+    mod object_tests {
+        use super::*;
+
+        // #[test]
+        // fn test_object_type() {
+        //     let schema = json!({
+        //             "type": "object",
+        //             "properties": {
+        //                 "name": {
+        //                     "type": "string",
+        //                     "minLength": 2,
+        //                     "maxLength": 5
+        //                 },
+        //             },
+
+        //             ];
+
+        //     for schema in schemas {
+        //         test_regex(&schema);
+        //     }
+        // }
+
+        #[test]
+        fn test_object_type_with_name() {
+            let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_schema1_regex() {
+            let schema = json!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -371,145 +397,238 @@ mod tests {
                         "maxLength": 5
                     },
                 },
-            }),
-            json!({"type": "object", "properties": {"name": {"type": "string"}}}),
-        ];
+            });
+            test_regex(&schema);
+        }
 
-        for schema in schemas {
+        #[test]
+        fn test_schema2_regex() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                },
+            });
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_schema3_regex() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "flag": {"type": "boolean"},
+                },
+            });
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_schema4_regex() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "flag": {"type": "boolean"},
+                },
+            });
             test_regex(&schema);
         }
     }
-    #[test]
-    fn test_string_type() {
-        let schema = json!({"type": "string", "minLength": 2, "maxLength": 5});
-        test_regex(&schema);
+
+    mod array_tests {
+        use super::*;
+
+        #[test]
+        fn test_array_with_string() {
+            let schema_string = json!({"type": "array", "items": {"type": "string"}});
+            test_regex(&schema_string);
+        }
+
+        #[test]
+        fn test_array_with_number() {
+            let schema_number = json!({"type": "array", "items": {"type": "number"}});
+            test_regex(&schema_number);
+        }
+
+        #[test]
+        fn test_array_with_integer() {
+            let schema_integer = json!({"type": "array", "items": {"type": "integer"}});
+            test_regex(&schema_integer);
+        }
+
+        #[test]
+        fn test_array_with_boolean() {
+            let schema_boolean = json!({"type": "array", "items": {"type": "boolean"}});
+            test_regex(&schema_boolean);
+        }
+
+        #[test]
+        fn test_array_with_null() {
+            let schema_null = json!({"type": "array", "items": {"type": "null"}});
+            test_regex(&schema_null);
+        }
     }
 
-    #[test]
-    fn test_number_type() {
-        let schema = json!({"type": "number"});
-        test_regex(&schema);
+    mod string_tests {
+        use super::*;
+
+        #[test]
+        fn test_string_type() {
+            let schema = json!({"type": "string", "minLength": 2, "maxLength": 5});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_length_constraints() {
+            let schema = json!({"type": "string", "minLength": 2, "maxLength": 5});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_pattern() {
+            let schema = json!({"type": "string", "pattern": "^[a-zA-Z0-9]+$"});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_date_time_format() {
+            let schema = json!({"type": "string", "format": "date-time"});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_date_format() {
+            let schema = json!({"type": "string", "format": "date"});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_time_format() {
+            let schema = json!({"type": "string", "format": "time"});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_uuid_format() {
+            let schema = json!({"type": "string", "format": "uuid"});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_pattern_and_length_constraints() {
+            let schema = json!({
+                "type": "string",
+                "pattern": "^[A-Z]+$",
+                "minLength": 3,
+                "maxLength": 10
+            });
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_string_type_with_format_and_length_constraints() {
+            let schema = json!({
+                "type": "string",
+                "format": "date-time",
+                "minLength": 20,
+                "maxLength": 30
+            });
+            test_regex(&schema);
+        }
     }
-    #[test]
-    fn test_number_with_int_bounds_type() {
-        let schema = json!({"type": "number", "minDigitsInteger": 12});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_number_with_fraction_bounds() {
-        let schema = json!({"type": "number", "minDigitsFraction": 2, "maxDigitsFraction": 4});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_number_with_exponent_bounds() {
-        let schema = json!({"type": "number", "minDigitsExponent": 1, "maxDigitsExponent": 3});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_integer_type() {
-        let schema = json!({"type": "integer", "minimum": 1, "maximum": 10});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_array_with_string() {
-        let schema_string = json!({"type": "array", "items": {"type": "string"}});
-        test_regex(&schema_string);
+    mod number_tests {
+        use super::*;
+
+        #[test]
+        fn test_number_type() {
+            let schema = json!({"type": "number"});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_number_with_int_bounds_type() {
+            let schema = json!({"type": "number", "minDigitsInteger": 12});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_number_with_fraction_bounds() {
+            let schema = json!({"type": "number", "minDigitsFraction": 2, "maxDigitsFraction": 4});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_number_with_exponent_bounds() {
+            let schema = json!({"type": "number", "minDigitsExponent": 1, "maxDigitsExponent": 3});
+            test_regex(&schema);
+        }
     }
 
-    #[test]
-    fn test_array_with_number() {
-        let schema_number = json!({"type": "array", "items": {"type": "number"}});
-        test_regex(&schema_number);
-    }
-    #[test]
-    fn test_array_with_integer() {
-        let schema_integer = json!({"type": "array", "items": {"type": "integer"}});
-        test_regex(&schema_integer);
-    }
-    #[test]
-    fn test_array_with_boolean() {
-        let schema_boolean = json!({"type": "array", "items": {"type": "boolean"}});
-        test_regex(&schema_boolean);
-    }
-    #[test]
-    fn test_array_with_null() {
-        let schema_null = json!({"type": "array", "items": {"type": "null"}});
-        test_regex(&schema_null);
-    }
-    #[test]
-    fn test_boolean_type() {
-        let schema = json!({"type": "boolean"});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_null_type() {
-        let schema = json!({"type": "null"});
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_prefix_items() {
-        let schema = json!({
-            "prefixItems": [
-                { "type": "integer" },
-                { "type": "string" },
-                { "type": "boolean" }
-            ]
-        });
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_enum() {
-        let schema = json!({
-            "enum": ["red", "green", "blue", 42, true, null]
-        });
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_const() {
-        let schema = json!({
-            "const": "hello world"
-        });
-        test_regex(&schema);
-    }
-    #[test]
-    fn test_expected_regex() {
-        let schema1 = json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "minLength": 2,
-                    "maxLength": 5
-                },
-            },
-        });
-        test_regex(&schema1);
+    mod integer_tests {
+        use super::*;
 
-        let schema2 = json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-            },
-        });
-        test_regex(&schema2);
+        #[test]
+        fn test_integer_type() {
+            let schema = json!({"type": "integer"});
+            test_regex(&schema);
+        }
 
-        let schema3 = json!({
-            "type": "object",
-            "properties": {
-                "flag": {"type": "boolean"},
-            },
-        });
-        test_regex(&schema3);
+        #[test]
+        fn test_integer_with_low_bound() {
+            let schema = json!({"type": "integer", "minDigits": 1});
+            test_regex(&schema);
+        }
 
-        let schema4 = json!({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "flag": {"type": "boolean"},
-            },
-        });
-        test_regex(&schema4);
+        #[test]
+        fn test_integer_with_high_bound() {
+            let schema = json!({"type": "integer", "maxDigits": 10});
+            test_regex(&schema);
+        }
+
+        #[test]
+        fn test_integer_with_low_and_high_bound() {
+            let schema = json!({"type": "integer", "minDigits": 1, "maxDigits": 10});
+            test_regex(&schema);
+        }
+    }
+
+    mod simple_tests {
+        use super::*;
+
+        #[test]
+        fn test_boolean_type() {
+            let schema = json!({"type": "boolean"});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_null_type() {
+            let schema = json!({"type": "null"});
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_enum() {
+            let schema = json!({
+                "enum": ["red", "green", "blue", 42, true, null]
+            });
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_const() {
+            let schema = json!({
+                "const": "hello world"
+            });
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_prefix_items() {
+            let schema = json!({
+                "prefixItems": [
+                    { "type": "integer" },
+                    { "type": "string" },
+                    { "type": "boolean" }
+                ]
+            });
+            test_regex(&schema);
+        }
     }
 }
