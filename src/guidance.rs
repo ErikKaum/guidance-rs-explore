@@ -358,7 +358,7 @@ mod tests {
             _ => false,
         }
     }
-    
+
     #[test]
     fn test_object_type() {
         let schemas = vec![
@@ -411,16 +411,36 @@ mod tests {
         test_regex(&schema);
     }
     #[test]
-    fn test_array_type() {
-        let schema = json!({"type": "array", "items": {"type": "string"}});
-        test_regex(&schema);
+    fn test_array_with_string() {
+        let schema_string = json!({"type": "array", "items": {"type": "string"}});
+        test_regex(&schema_string);
+    }
+
+    #[test]
+    fn test_array_with_number() {
+        let schema_number = json!({"type": "array", "items": {"type": "number"}});
+        test_regex(&schema_number);
+    }
+    #[test]
+    fn test_array_with_integer() {
+        let schema_integer = json!({"type": "array", "items": {"type": "integer"}});
+        test_regex(&schema_integer);
+    }
+    #[test]
+    fn test_array_with_boolean() {
+        let schema_boolean = json!({"type": "array", "items": {"type": "boolean"}});
+        test_regex(&schema_boolean);
+    }
+    #[test]
+    fn test_array_with_null() {
+        let schema_null = json!({"type": "array", "items": {"type": "null"}});
+        test_regex(&schema_null);
     }
     #[test]
     fn test_boolean_type() {
         let schema = json!({"type": "boolean"});
         test_regex(&schema);
     }
-
     #[test]
     fn test_null_type() {
         let schema = json!({"type": "null"});

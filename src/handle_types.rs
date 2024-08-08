@@ -151,7 +151,7 @@ pub fn handle_object_type(
     let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
     let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
 
-    let num_repeats = _get_num_items_pattern(min_properties, max_properties);
+    let num_repeats = get_num_items_pattern(min_properties, max_properties);
 
     if num_repeats.is_none() {
         return Ok(format!(r"\{{{}}}", whitespace_pattern));
@@ -212,15 +212,14 @@ pub fn handle_array_type(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
 ) -> Result<String> {
-    // TODO handle the unwrap
-    let num_repeats = _get_num_items_pattern(
+    let num_repeats = get_num_items_pattern(
         obj.get("minItems").and_then(Value::as_u64),
         obj.get("maxItems").and_then(Value::as_u64),
     )
-    .unwrap();
+    .unwrap_or_else(|| String::from(""));
 
     if num_repeats.is_empty() {
-        return Ok(format!(r"\[{}\]", whitespace_pattern));
+        return Ok(format!(r"\[{0}{0}\]", whitespace_pattern));
     }
 
     let allow_empty = if obj.get("minItems").and_then(Value::as_u64).unwrap_or(0) == 0 {
@@ -232,14 +231,8 @@ pub fn handle_array_type(
     if let Some(items) = obj.get("items") {
         let items_regex = to_regex(items, Some(whitespace_pattern))?;
         Ok(format!(
-            r"\[{}(({})({}{}{}){}){}\]",
-            whitespace_pattern,
-            items_regex,
-            ",",
-            whitespace_pattern,
-            items_regex,
-            num_repeats,
-            allow_empty
+            r"\[{0}(({1})(,{0}({1})){2}){3}{0}\]",
+            whitespace_pattern, items_regex, num_repeats, allow_empty
         ))
     } else {
         let mut legal_types = vec![
@@ -265,14 +258,8 @@ pub fn handle_array_type(
         let regexes_joined = regexes.join("|");
 
         Ok(format!(
-            r"\[{}({})(,{}({}){}){}{}\]",
-            whitespace_pattern,
-            regexes_joined,
-            whitespace_pattern,
-            regexes_joined,
-            num_repeats,
-            allow_empty,
-            whitespace_pattern
+            r"\[{0}(({1})(,{0}({1})){2}){3}{0}\]",
+            whitespace_pattern, regexes_joined, num_repeats, allow_empty
         ))
     }
 }
@@ -298,17 +285,17 @@ fn validate_quantifiers(
     Ok((min_bound.flatten(), max_bound.flatten()))
 }
 
-fn _get_num_items_pattern(min_items: Option<u64>, max_items: Option<u64>) -> Option<String> {
+fn get_num_items_pattern(min_items: Option<u64>, max_items: Option<u64>) -> Option<String> {
     let min_items = min_items.unwrap_or(0);
 
     match max_items {
-        None => Some(format!("{{{{{}:}}}}", min_items.saturating_sub(1))),
+        None => Some(format!("{{{},}}", min_items.saturating_sub(1))),
         Some(max_items) => {
             if max_items < 1 {
                 None
             } else {
                 Some(format!(
-                    "{{{{{}:{}}}}}",
+                    "{{{},{}}}",
                     min_items.saturating_sub(1),
                     max_items.saturating_sub(1)
                 ))
