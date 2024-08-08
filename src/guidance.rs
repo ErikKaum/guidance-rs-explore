@@ -324,27 +324,35 @@ pub fn handle_empty_object(whitespace_pattern: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use crate::py_wrapper::python_build_regex_from_schema;
+    use regex::Regex;
     use regex_syntax::Parser;
     use serde_json::json;
-    
+
     use super::*;
 
-    fn compare_with_outlines(schema: &serde_json::Value) {
+    fn test_regex(schema: &serde_json::Value) {
         let schema_str = schema.to_string();
         let rust_regex = build_regex_from_schema(&schema_str, None).unwrap();
         let outlines_regex = python_build_regex_from_schema(&schema_str).unwrap();
 
+        // check if regexes even compile
+        Regex::new(&rust_regex).expect("Rust regex is invalid");
+        Regex::new(&outlines_regex).expect("Outlines regex is invalid");
+
+        // compare to outlines
         assert!(
             compare_regexes(&rust_regex, &outlines_regex),
             "Rust and Python outputs are not equivalent for schema: {}\nRust:    {}\nPython:  {}",
-            schema_str, rust_regex, outlines_regex
+            schema_str,
+            rust_regex,
+            outlines_regex
         );
     }
 
     fn compare_regexes(a: &str, b: &str) -> bool {
         let parse_result_a = Parser::new().parse(a);
         let parse_result_b = Parser::new().parse(b);
-    
+
         match (parse_result_a, parse_result_b) {
             (Ok(hir_a), Ok(hir_b)) => hir_a == hir_b,
             _ => false,
@@ -352,62 +360,72 @@ mod tests {
     }
     
     #[test]
-    fn test_handle_object_type() {
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "minLength": 2,
-                    "maxLength": 5
+    fn test_object_type() {
+        let schemas = vec![
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 5
+                    },
                 },
-            },
-        });
-        compare_with_outlines(&schema);
-    }
+            }),
+            json!({"type": "object", "properties": {"name": {"type": "string"}}}),
+        ];
 
+        for schema in schemas {
+            test_regex(&schema);
+        }
+    }
     #[test]
     fn test_string_type() {
         let schema = json!({"type": "string", "minLength": 2, "maxLength": 5});
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
 
     #[test]
     fn test_number_type() {
-        let schema = json!({"type": "number", "minimum": 0, "maximum": 100});
-        compare_with_outlines(&schema);
+        let schema = json!({"type": "number"});
+        test_regex(&schema);
     }
-
+    #[test]
+    fn test_number_with_int_bounds_type() {
+        let schema = json!({"type": "number", "minDigitsInteger": 12});
+        test_regex(&schema);
+    }
+    #[test]
+    fn test_number_with_fraction_bounds() {
+        let schema = json!({"type": "number", "minDigitsFraction": 2, "maxDigitsFraction": 4});
+        test_regex(&schema);
+    }
+    #[test]
+    fn test_number_with_exponent_bounds() {
+        let schema = json!({"type": "number", "minDigitsExponent": 1, "maxDigitsExponent": 3});
+        test_regex(&schema);
+    }
     #[test]
     fn test_integer_type() {
         let schema = json!({"type": "integer", "minimum": 1, "maximum": 10});
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
     #[test]
     fn test_array_type() {
         let schema = json!({"type": "array", "items": {"type": "string"}});
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
-    #[test]
-    fn test_object_type() {
-        let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
-        compare_with_outlines(&schema);
-    }
-
     #[test]
     fn test_boolean_type() {
         let schema = json!({"type": "boolean"});
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
 
     #[test]
     fn test_null_type() {
         let schema = json!({"type": "null"});
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
     #[test]
     fn test_prefix_items() {
         let schema = json!({
@@ -417,25 +435,22 @@ mod tests {
                 { "type": "boolean" }
             ]
         });
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
     #[test]
     fn test_enum() {
         let schema = json!({
             "enum": ["red", "green", "blue", 42, true, null]
         });
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
     #[test]
     fn test_const() {
         let schema = json!({
             "const": "hello world"
         });
-        compare_with_outlines(&schema);
+        test_regex(&schema);
     }
-
     #[test]
     fn test_expected_regex() {
         let schema1 = json!({
@@ -448,7 +463,7 @@ mod tests {
                 },
             },
         });
-        compare_with_outlines(&schema1);
+        test_regex(&schema1);
 
         let schema2 = json!({
             "type": "object",
@@ -458,7 +473,7 @@ mod tests {
                 },
             },
         });
-        compare_with_outlines(&schema2);
+        test_regex(&schema2);
 
         let schema3 = json!({
             "type": "object",
@@ -466,7 +481,7 @@ mod tests {
                 "flag": {"type": "boolean"},
             },
         });
-        compare_with_outlines(&schema3);
+        test_regex(&schema3);
 
         let schema4 = json!({
             "type": "object",
@@ -475,6 +490,6 @@ mod tests {
                 "flag": {"type": "boolean"},
             },
         });
-        compare_with_outlines(&schema4);
+        test_regex(&schema4);
     }
 }
