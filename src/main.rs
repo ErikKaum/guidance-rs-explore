@@ -49,6 +49,10 @@ fn main() {
         "empty" => json!({
             "type": "object",
         }),
+        "number" => json!({
+            "type": "number",
+            "minDigitsInteger": 12,
+        }),
         _ => {
             println!("Invalid argument. Use 'simple' or 'empty'.");
             return;

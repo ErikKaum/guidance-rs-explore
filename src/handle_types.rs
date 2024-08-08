@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use anyhow::{anyhow, Ok, Result};
 use serde_json::json;
 use serde_json::Value;
@@ -92,22 +94,24 @@ pub fn handle_number_type(obj: &serde_json::Map<String, Value>) -> Result<String
             0,
         )?;
 
-        let integers_quantifier = if min_digits_integer > 0 || max_digits_integer < u64::MAX {
-            format!("{{{},{}}}", min_digits_integer, max_digits_integer)
-        } else {
-            "*".to_string()
+        let integers_quantifier = match (min_digits_integer, max_digits_integer) {
+            (Some(min), Some(max)) => format!("{{{},{}}}", min, max),
+            (Some(min), None) => format!("{{{},}}", min),
+            (None, Some(max)) => format!("{{1,{}}}", max),
+            (None, None) => "*".to_string(),
+        };
+        let fraction_quantifier = match (min_digits_fraction, max_digits_fraction) {
+            (Some(min), Some(max)) => format!("{{{},{}}}", min, max),
+            (Some(min), None) => format!("{{{},}}", min),
+            (None, Some(max)) => format!("{{0,{}}}", max),
+            (None, None) => "+".to_string(),
         };
 
-        let fraction_quantifier = if min_digits_fraction > 0 || max_digits_fraction < u64::MAX {
-            format!("{{{},{}}}", min_digits_fraction, max_digits_fraction)
-        } else {
-            "+".to_string()
-        };
-
-        let exponent_quantifier = if min_digits_exponent > 0 || max_digits_exponent < u64::MAX {
-            format!("{{{},{}}}", min_digits_exponent, max_digits_exponent)
-        } else {
-            "+".to_string()
+        let exponent_quantifier = match (min_digits_exponent, max_digits_exponent) {
+            (Some(min), Some(max)) => format!("{{{},{}}}", min, max),
+            (Some(min), None) => format!("{{{},}}", min),
+            (None, Some(max)) => format!("{{0,{}}}", max),
+            (None, None) => "+".to_string(),
         };
 
         Ok(format!(
@@ -119,7 +123,6 @@ pub fn handle_number_type(obj: &serde_json::Map<String, Value>) -> Result<String
         Ok(format_type.to_regex().to_string())
     }
 }
-
 pub fn handle_integer_type(obj: &serde_json::Map<String, Value>) -> Result<String> {
     if obj.contains_key("minDigits") || obj.contains_key("maxDigits") {
         let (min_digits, max_digits) = validate_quantifiers(
@@ -128,16 +131,19 @@ pub fn handle_integer_type(obj: &serde_json::Map<String, Value>) -> Result<Strin
             1,
         )?;
 
-        Ok(format!(
-            r"(-)?(0|[1-9][0-9]{{{},{}}})",
-            min_digits, max_digits
-        ))
+        let quantifier = match (min_digits, max_digits) {
+            (Some(min), Some(max)) => format!("{{{},{}}}", min, max),
+            (Some(min), None) => format!("{{{},}}", min),
+            (None, Some(max)) => format!("{{1,{}}}", max),
+            (None, None) => "*".to_string(),
+        };
+
+        Ok(format!(r"(-)?(0|[1-9][0-9]{})", quantifier))
     } else {
         let format_type = types::JsonType::Integer;
         Ok(format_type.to_regex().to_string())
     }
 }
-
 pub fn handle_object_type(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
@@ -145,7 +151,6 @@ pub fn handle_object_type(
     let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
     let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
 
-    // _get_num_items_pattern function (assume it's implemented elsewhere)
     let num_repeats = _get_num_items_pattern(min_properties, max_properties);
 
     if num_repeats.is_none() {
@@ -278,17 +283,19 @@ fn validate_quantifiers(
     min_bound: Option<u64>,
     max_bound: Option<u64>,
     start_offset: u64,
-) -> Result<(u64, u64)> {
-    let min_bound = min_bound.map_or(0, |n| n.saturating_sub(start_offset));
-    let max_bound = max_bound.map_or(0, |n| n.saturating_sub(start_offset));
+) -> Result<(Option<NonZeroU64>, Option<NonZeroU64>)> {
+    let min_bound = min_bound.map(|n| NonZeroU64::new(n.saturating_sub(start_offset)));
+    let max_bound = max_bound.map(|n| NonZeroU64::new(n.saturating_sub(start_offset)));
 
-    if min_bound != 0 && max_bound != 0 && max_bound < min_bound {
-        return Err(anyhow!(
-            "max bound must be greater than or equal to min bound"
-        ));
+    if let (Some(min), Some(max)) = (min_bound, max_bound) {
+        if max < min {
+            return Err(anyhow!(
+                "max bound must be greater than or equal to min bound"
+            ));
+        }
     }
 
-    Ok((min_bound, max_bound))
+    Ok((min_bound.flatten(), max_bound.flatten()))
 }
 
 fn _get_num_items_pattern(min_items: Option<u64>, max_items: Option<u64>) -> Option<String> {
