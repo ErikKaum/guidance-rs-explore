@@ -134,7 +134,7 @@ pub fn handle_integer_type(obj: &serde_json::Map<String, Value>) -> Result<Strin
         let quantifier = match (min_digits, max_digits) {
             (Some(min), Some(max)) => format!("{{{},{}}}", min, max),
             (Some(min), None) => format!("{{{},}}", min),
-            (None, Some(max)) => format!("{{1,{}}}", max),
+            (None, Some(max)) => format!("{{0,{}}}", max),
             (None, None) => "*".to_string(),
         };
 
