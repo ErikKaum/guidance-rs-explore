@@ -9,7 +9,7 @@ fn benchmark_to_regex(c: &mut Criterion) {
     });
 
     c.bench_function("to_regex", |b| {
-        b.iter(|| to_regex(black_box(&json_value), None))
+        b.iter(|| to_regex(black_box(&json_value), None, black_box(&json_value)))
     });
 }
 
