@@ -3,7 +3,7 @@ pub static STRING_INNER: &str = r#"([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])"#;
 pub static STRING: &str = r#""([^"\\\x00-\x1F\x7F-\x9F]|\\["\\])*""#;
 
 static INTEGER: &str = r#"(-)?(0|[1-9][0-9]*)"#;
-static NUMBER: &str = r#"((-)?((0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?)"#;
+static NUMBER: &str = r#"((-)?(0|[1-9][0-9]*))(\.[0-9]+)?([eE][+-][0-9]+)?"#;
 static BOOLEAN: &str = r#"(true|false)"#;
 static NULL: &str = r#"null"#;
 
