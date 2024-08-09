@@ -26,10 +26,14 @@ pub fn build_regex_from_schema(json: &str, whitespace_pattern: Option<&str>) -> 
     let _compiled_schema = JSONSchema::compile(&json_value)
         .map_err(|e| anyhow!("Failed to compile JSON schema: {}", e))?;
 
-    to_regex(&json_value, whitespace_pattern)
+    to_regex(&json_value, whitespace_pattern, &json_value)
 }
 
-pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String> {
+pub fn to_regex(
+    json: &Value,
+    whitespace_pattern: Option<&str>,
+    full_schema: &Value,
+) -> Result<String> {
     let whitespace_pattern = whitespace_pattern.unwrap_or(types::WHITESPACE);
 
     match json {
@@ -60,17 +64,20 @@ pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String
             };
 
             match keyword {
-                SchemaKeyword::Properties => handle_properties(obj, whitespace_pattern),
-                SchemaKeyword::AllOf => handle_all_of(obj, whitespace_pattern),
-                SchemaKeyword::AnyOf => handle_any_of(obj, whitespace_pattern),
-                SchemaKeyword::OneOf => handle_one_of(obj, whitespace_pattern),
-                SchemaKeyword::PrefixItems => handle_prefix_items(obj, whitespace_pattern),
+                SchemaKeyword::Properties => {
+                    handle_properties(obj, whitespace_pattern, full_schema)
+                }
+                SchemaKeyword::AllOf => handle_all_of(obj, whitespace_pattern, full_schema),
+                SchemaKeyword::AnyOf => handle_any_of(obj, whitespace_pattern, full_schema),
+                SchemaKeyword::OneOf => handle_one_of(obj, whitespace_pattern, full_schema),
+                SchemaKeyword::PrefixItems => {
+                    handle_prefix_items(obj, whitespace_pattern, full_schema)
+                }
                 SchemaKeyword::Enum => handle_enum(obj, whitespace_pattern),
                 SchemaKeyword::Const => handle_const(obj, whitespace_pattern),
-                // SchemaKeyword::Ref => handle_ref(obj, whitespace_pattern),
-                SchemaKeyword::Type => handle_type(obj, whitespace_pattern),
-                SchemaKeyword::EmptyObject => handle_empty_object(whitespace_pattern),
-                val => Err(anyhow!("Unsupported JSON Schema keyword: {:?}", val)),
+                SchemaKeyword::Ref => handle_ref(obj, whitespace_pattern, full_schema),
+                SchemaKeyword::Type => handle_type(obj, whitespace_pattern, full_schema),
+                SchemaKeyword::EmptyObject => handle_empty_object(whitespace_pattern, full_schema),
             }
         }
         _ => Err(anyhow!("Invalid JSON Schema: expected an object")),
@@ -80,6 +87,7 @@ pub fn to_regex(json: &Value, whitespace_pattern: Option<&str>) -> Result<String
 fn handle_properties(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
+    full_schema: &Value,
 ) -> Result<String> {
     let mut regex = String::from(r"\{");
 
@@ -115,7 +123,7 @@ fn handle_properties(
                 whitespace_pattern,
                 whitespace_pattern
             );
-            subregex += &to_regex(value, Some(whitespace_pattern))?;
+            subregex += &to_regex(value, Some(whitespace_pattern), full_schema)?;
 
             if i < last_required_pos {
                 subregex = format!("{}{},", subregex, whitespace_pattern);
@@ -139,7 +147,7 @@ fn handle_properties(
                 whitespace_pattern
             );
 
-            subregex += &to_regex(value, Some(whitespace_pattern))?;
+            subregex += &to_regex(value, Some(whitespace_pattern), full_schema)?;
             property_subregexes.push(subregex);
         }
 
@@ -164,12 +172,16 @@ fn handle_properties(
     Ok(regex)
 }
 
-fn handle_all_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+fn handle_all_of(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+    full_schema: &Value,
+) -> Result<String> {
     match obj.get("allOf") {
         Some(Value::Array(all_of)) => {
             let subregexes: Result<Vec<String>> = all_of
                 .iter()
-                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
                 .collect();
 
             let subregexes = subregexes?;
@@ -181,12 +193,16 @@ fn handle_all_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str)
     }
 }
 
-fn handle_any_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+fn handle_any_of(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+    full_schema: &Value,
+) -> Result<String> {
     match obj.get("anyOf") {
         Some(Value::Array(any_of)) => {
             let subregexes: Result<Vec<String>> = any_of
                 .iter()
-                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
                 .collect();
 
             let subregexes = subregexes?;
@@ -197,12 +213,16 @@ fn handle_any_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str)
     }
 }
 
-fn handle_one_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+fn handle_one_of(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+    full_schema: &Value,
+) -> Result<String> {
     match obj.get("oneOf") {
         Some(Value::Array(one_of)) => {
             let subregexes: Result<Vec<String>> = one_of
                 .iter()
-                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
                 .collect();
 
             let subregexes = subregexes?;
@@ -221,12 +241,13 @@ fn handle_one_of(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str)
 fn handle_prefix_items(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
+    full_schema: &Value,
 ) -> Result<String> {
     match obj.get("prefixItems") {
         Some(Value::Array(prefix_items)) => {
             let element_patterns: Result<Vec<String>> = prefix_items
                 .iter()
-                .map(|t| to_regex(t, Some(whitespace_pattern)))
+                .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
                 .collect();
 
             let element_patterns = element_patterns?;
@@ -276,12 +297,41 @@ fn handle_const(obj: &serde_json::Map<String, Value>, _whitespace_pattern: &str)
     }
 }
 
-// fn handle_ref(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
-//     // Implementation for $ref case
-//     todo!()
-// }
+fn handle_ref(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+    full_schema: &Value,
+) -> Result<String> {
+    let ref_path = obj["$ref"]
+        .as_str()
+        .ok_or_else(|| anyhow!("'$ref' must be a string"))?;
 
-fn handle_type(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -> Result<String> {
+    // TODO Only handle local references for now, maybe add support for remote references later
+    if !ref_path.starts_with("#/") {
+        return Err(anyhow!("Only local references are supported"));
+    }
+
+    let path_parts: Vec<&str> = ref_path[2..].split('/').collect();
+    let referenced_schema = resolve_local_ref(full_schema, &path_parts)?;
+
+    to_regex(referenced_schema, Some(whitespace_pattern), full_schema)
+}
+
+fn resolve_local_ref<'a>(schema: &'a Value, path_parts: &[&str]) -> Result<&'a Value> {
+    let mut current = schema;
+    for &part in path_parts {
+        current = current
+            .get(part)
+            .ok_or_else(|| anyhow!("Invalid reference path: {}", part))?;
+    }
+    Ok(current)
+}
+
+fn handle_type(
+    obj: &serde_json::Map<String, Value>,
+    whitespace_pattern: &str,
+    full_schema: &Value,
+) -> Result<String> {
     let instance_type = obj["type"]
         .as_str()
         .ok_or_else(|| anyhow!("'type' must be a string"))?;
@@ -289,15 +339,15 @@ fn handle_type(obj: &serde_json::Map<String, Value>, whitespace_pattern: &str) -
         "string" => handle_types::handle_string_type(obj),
         "number" => handle_types::handle_number_type(obj),
         "integer" => handle_types::handle_integer_type(obj),
-        "array" => handle_types::handle_array_type(obj, whitespace_pattern),
-        "object" => handle_types::handle_object_type(obj, whitespace_pattern),
+        "array" => handle_types::handle_array_type(obj, whitespace_pattern, full_schema),
+        "object" => handle_types::handle_object_type(obj, whitespace_pattern, full_schema),
         "boolean" => handle_types::handle_boolean_type(),
         "null" => handle_types::handle_null_type(),
         _ => Err(anyhow!("Unsupported type: {}", instance_type)),
     }
 }
 
-pub fn handle_empty_object(whitespace_pattern: &str) -> Result<String> {
+pub fn handle_empty_object(whitespace_pattern: &str, full_schema: &Value) -> Result<String> {
     // JSON Schema Spec: Empty object means unconstrained, any json type is legal
     let types = vec![
         json!({"type": "boolean"}),
@@ -311,7 +361,7 @@ pub fn handle_empty_object(whitespace_pattern: &str) -> Result<String> {
 
     let regexes: Result<Vec<String>> = types
         .iter()
-        .map(|t| to_regex(t, Some(whitespace_pattern)))
+        .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
         .collect();
 
     let regexes = regexes?;
@@ -370,15 +420,15 @@ mod tests {
         #[test]
         fn test_schema0_regex() {
             let schema = json!({
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "minLength": 2,
-                            "maxLength": 5
-                        },
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 5
                     },
-                });
+                },
+            });
 
             test_regex(&schema);
         }
@@ -421,7 +471,6 @@ mod tests {
             });
             test_regex(&schema);
         }
-
 
         // TODO, this fails since the order of the properties is different between rust and python
         // It's commented out for now but in the future would be nice to be able to test this
@@ -631,5 +680,104 @@ mod tests {
             });
             test_regex(&schema);
         }
+    }
+
+    mod ref_tests {
+        use super::*;
+
+        #[test]
+        fn test_ref() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "flag": {
+                        "$ref": "#/definitions/flag"
+                    }
+                },
+                "definitions": {
+                    "flag": {
+                        "type": "boolean"
+                    }
+                }
+            });
+            test_regex(&schema);
+        }
+        #[test]
+        fn test_multiple_refs() {
+            let schema = json!({
+                "type": "object",
+                "properties": {
+                    "manager": { "$ref": "#/definitions/employee" },
+                    "subordinate": { "$ref": "#/definitions/employee" }
+                },
+                "required": ["manager", "subordinate"],
+                "definitions": {
+                    "employee": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "age": { "type": "integer" }
+                        },
+                        "required": ["name", "age"]
+                    }
+                }
+            });
+            test_regex(&schema);
+        }
+    }
+    #[test]
+    fn test_nested_ref() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "employee": { "$ref": "#/definitions/employee" }
+            },
+            "definitions": {
+                "employee": {
+                    "type": "object",
+                    "properties": {
+                        "person": { "$ref": "#/definitions/person" },
+                        "position": { "type": "string" }
+                    },
+                    "required": ["person", "position"]
+                },
+                "person": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "age": { "type": "integer" }
+                    },
+                    "required": ["name", "age"]
+                }
+            }
+        });
+        test_regex(&schema);
+    }
+    #[test]
+    fn test_invalid_ref_path() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "person": { "$ref": "#/definitions/nonexistent" }
+            },
+            "definitions": {
+                "person": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "age": { "type": "integer" }
+                    },
+                    "required": ["name", "age"]
+                }
+            }
+        });
+
+        let result = build_regex_from_schema(&serde_json::to_string(&schema).unwrap(), None);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Invalid reference path: nonexistent"));
     }
 }

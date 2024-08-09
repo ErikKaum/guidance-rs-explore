@@ -147,6 +147,7 @@ pub fn handle_integer_type(obj: &serde_json::Map<String, Value>) -> Result<Strin
 pub fn handle_object_type(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
+    full_schema: &Value,
 ) -> Result<String> {
     let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
     let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
@@ -183,9 +184,13 @@ pub fn handle_object_type(
             }
 
             let any_of = json!({"anyOf": legal_types});
-            to_regex(&any_of, Some(whitespace_pattern))
+            to_regex(&any_of, Some(whitespace_pattern), full_schema)
         } else {
-            to_regex(additional_properties.unwrap(), Some(whitespace_pattern))
+            to_regex(
+                additional_properties.unwrap(),
+                Some(whitespace_pattern),
+                full_schema,
+            )
         };
 
     // TODO handle the unwrap
@@ -211,6 +216,7 @@ pub fn handle_object_type(
 pub fn handle_array_type(
     obj: &serde_json::Map<String, Value>,
     whitespace_pattern: &str,
+    full_schema: &Value,
 ) -> Result<String> {
     let num_repeats = get_num_items_pattern(
         obj.get("minItems").and_then(Value::as_u64),
@@ -229,7 +235,7 @@ pub fn handle_array_type(
     };
 
     if let Some(items) = obj.get("items") {
-        let items_regex = to_regex(items, Some(whitespace_pattern))?;
+        let items_regex = to_regex(items, Some(whitespace_pattern), full_schema)?;
         Ok(format!(
             r"\[{0}(({1})(,{0}({1})){2}){3}{0}\]",
             whitespace_pattern, items_regex, num_repeats, allow_empty
@@ -251,7 +257,7 @@ pub fn handle_array_type(
 
         let regexes: Result<Vec<String>> = legal_types
             .iter()
-            .map(|t| to_regex(t, Some(whitespace_pattern)))
+            .map(|t| to_regex(t, Some(whitespace_pattern), full_schema))
             .collect();
 
         let regexes = regexes?;
